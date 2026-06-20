@@ -1,84 +1,115 @@
 using LineCreator.Models;
+using System.ComponentModel;
+using System.Drawing.Drawing2D;
+using static LineCreator.Constants.Constants;
 
 namespace LineCreator.Views.Forms
 {
     public partial class MainForm : Form
     {
-        private const int PointRadius = 12;
-
-        private readonly List<PointNode> _points = new();
-        private readonly List<Line> _lines = new();
+        private readonly Pen _linePen = new ( Color.Blue , 2 );
+        private readonly Pen _tempPen = new ( Color.Gray , 1 ) { DashStyle = DashStyle.Dash };
+        private readonly BindingList<PointNode> _points = new();
+        private readonly List<LineNode> _lines = new();
         private PointNode? _currentPoint;
         private Point _mousePosition;
+        private ToolMode _toolMode = ToolMode.None;
+        private PointF _viewOffset = new(0, 0);
+        private bool _isPanning;
+        private Point _panStartMouse;
+        private PointF _panStartOffset;
+        private float _scale = 4.0f;
 
         public MainForm ()
         {
             InitializeComponent ();
-
-            KeyPreview = true;
-
-            panel1.MouseClick += Panel1_MouseClick;
-            panel1.Paint += Panel1_Paint;
-            panel1.MouseMove += Panel1_MouseMove;
-            KeyDown += Form1_KeyDown;
+            SetupEventHandlers ();
         }
 
-        private void Form1_KeyDown ( object? sender , KeyEventArgs e )
+        private void MainForm_Load ( object? sender , EventArgs e )
+        {
+            WindowState = FormWindowState.Maximized;
+            MaximizeBox = false;
+
+            int clientWidth = ClientSize.Width;
+            int clientHeight = ClientSize.Height;
+            _menuPanel.Size = new Size ( clientWidth , 100 );
+            _viewPanel.Size = new Size ( clientWidth , clientHeight - _menuPanel.Height );
+        }
+
+        private void SetupEventHandlers ()
+        {
+            KeyPreview = true;
+
+            _pointLinePanel.Paint += PointLinePanel_Paint;
+            _pointLinePanel.MouseClick += PointLinePanel_MouseClick;
+            _pointLinePanel.MouseMove += PointLinePanel_MouseMove;
+            _pointLinePanel.MouseDown += PointLinePanel_MouseDown;
+            _pointLinePanel.MouseUp += PointLinePanel_MouseUp;
+            KeyDown += MainForm_KeyDown;
+            _lineSegmentBtn.Click += LineSegmentBtn_Click;
+            _listDispBtn.Click += ListDispBtn_Click;
+        }
+
+        private void MainForm_KeyDown ( object? sender , KeyEventArgs e )
         {
             if ( e.KeyCode == Keys.Escape )
             {
                 _currentPoint = null;
-                panel1.Invalidate ();
+                _toolMode = ToolMode.None;
+
+                _pointLinePanel.Invalidate ();
             }
         }
 
-        private void Panel1_MouseClick ( object? sender , MouseEventArgs e )
+        private void PointLinePanel_MouseClick ( object? sender , MouseEventArgs e )
         {
+            if ( _toolMode != ToolMode.LineSegment )
+                return;
+
             if ( e.Button != MouseButtons.Left )
                 return;
 
             // ★① 既存点をクリックしたか判定
-            var hitPoint = FindPoint(e.Location);
 
             PointNode? point = null;
 
-            if ( hitPoint != null )
+            if ( _currentPoint != null )
             {
-                var result = MessageBox.Show(
-            "この点と接続しますか？",
-            "確認",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question);
-
-                if ( result == DialogResult.Yes )
+                PointF worldMouse = ScreenToWorld(e.Location);
+                PointNode? hitPoint = FindPoint(worldMouse);
+                if ( hitPoint != null )
                 {
-                    point = hitPoint;
+                    var result = MessageBox.Show (
+                        "この点と接続しますか？" ,
+                        "確認" ,
+                        MessageBoxButtons.YesNo ,
+                        MessageBoxIcon.Question );
+
+                    if ( result == DialogResult.Yes )
+                    {
+                        point = hitPoint;
+                    }
                 }
             }
 
             // ★② 「いいえ」または既存点ではなかった場合
             if ( point == null )
             {
-                Point pos = e.Location;
+                PointF worldPos = ScreenToWorld(e.Location);
 
                 if ( _currentPoint != null )
                 {
-                    pos = GetSnapPoint ( _currentPoint.Position , pos );
+                    worldPos = GetSnapPoint ( _currentPoint.Position , worldPos );
                 }
 
-                point = new PointNode
-                {
-                    Position = pos ,
-                    Number = _points.Count + 1
-                };
-
-                _points.Add ( point );
+                point = CreatePoint ( worldPos );
             }
 
             // ★③ 線を引く処理
             if ( _currentPoint != null )
             {
-                _lines.Add ( new Line
+                _lines.Add ( new LineNode
                 {
                     Start = _currentPoint ,
                     End = point
@@ -87,38 +118,44 @@ namespace LineCreator.Views.Forms
 
             _currentPoint = point;
 
-            panel1.Invalidate ();
+            _pointLinePanel.Invalidate ();
         }
 
-        private void Panel1_Paint ( object? sender , PaintEventArgs e )
+        private void PointLinePanel_Paint ( object? sender , PaintEventArgs e )
         {
             Graphics g = e.Graphics;
 
-            g.SmoothingMode =
-                System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-
-            using Pen pen = new(Color.Blue, 2);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
 
             // 線
             foreach ( var line in _lines )
             {
+                PointF start = WorldToScreen(line.Start.Position);
+                PointF end = WorldToScreen(line.End.Position);
+
                 g.DrawLine (
-                    pen ,
-                    line.Start.Position ,
-                    line.End.Position );
+                    _linePen ,
+                    start ,
+                    end );
             }
 
             // 仮線
-            if ( _currentPoint != null )
+            if ( _toolMode == ToolMode.LineSegment && _currentPoint != null )
             {
-                Point end = GetSnapPoint(_currentPoint.Position, _mousePosition);
+                // 図面座標
+                PointF worldEnd = GetSnapPoint(
+                    _currentPoint.Position,
+                    ScreenToWorld ( _mousePosition ) );
 
-                using Pen tempPen = new(Color.Gray, 1)
-                {
-                    DashStyle = System.Drawing.Drawing2D.DashStyle.Dash
-                };
+                // 画面座標へ変換
+                PointF screenStart = WorldToScreen ( _currentPoint.Position );
+                PointF screenEnd = WorldToScreen ( worldEnd );
 
-                g.DrawLine ( tempPen , _currentPoint.Position , end );
+                // 描画
+                g.DrawLine (
+                    _tempPen ,
+                    screenStart ,
+                    screenEnd );
             }
 
             // 頂点
@@ -128,21 +165,61 @@ namespace LineCreator.Views.Forms
             }
         }
 
-        private void Panel1_MouseMove ( object? sender , MouseEventArgs e )
+        private void Point_PropertyChanged ( object? sender , PropertyChangedEventArgs e )
+        {
+            _pointLinePanel.Invalidate ();
+        }
+
+        private void PointLinePanel_MouseMove ( object? sender , MouseEventArgs e )
         {
             _mousePosition = e.Location;
-            panel1.Invalidate ();
+
+            if ( _isPanning )
+            {
+                _viewOffset = new PointF (
+                    _panStartOffset.X - ( e.X - _panStartMouse.X ) / _scale ,
+                    _panStartOffset.Y - ( e.Y - _panStartMouse.Y ) / _scale );
+
+                _pointLinePanel.Invalidate ();
+                return;
+            }
+
+            if ( _toolMode == ToolMode.LineSegment && _currentPoint != null )
+            {
+                _pointLinePanel.Invalidate ();
+            }
+        }
+
+        private void PointLinePanel_MouseDown ( object? sender , MouseEventArgs e )
+        {
+            if ( _toolMode != ToolMode.None )
+                return;
+
+            if ( e.Button != MouseButtons.Left )
+                return;
+
+            _isPanning = true;
+            _panStartMouse = e.Location;
+            _panStartOffset = _viewOffset;
+        }
+
+        private void PointLinePanel_MouseUp ( object? sender , MouseEventArgs e )
+        {
+            if ( e.Button == MouseButtons.Left )
+            {
+                _isPanning = false;
+            }
         }
 
         private void DrawPoint ( Graphics g , PointNode point )
         {
-            const int radius = 12;
+            PointF screen = WorldToScreen(point.Position);
 
-            Rectangle rect = new Rectangle (
-                point.Position.X - radius ,
-                point.Position.Y - radius ,
-                radius * 2 ,
-                radius * 2 );
+            RectangleF rect = new RectangleF (
+                screen.X - POINT_RADIUS ,
+                screen.Y - POINT_RADIUS ,
+                POINT_RADIUS * 2 ,
+                POINT_RADIUS * 2 );
 
             Brush fill = Brushes.Red;
             using Pen border = new Pen ( Color.Black , 2);
@@ -158,38 +235,73 @@ namespace LineCreator.Views.Forms
                 text ,
                 Font ,
                 Brushes.White ,
-                point.Position.X - size.Width / 2 ,
-                point.Position.Y - size.Height / 2 );
+                screen.X - size.Width / 2 ,
+                screen.Y - size.Height / 2 );
         }
 
-        private Point GetSnapPoint ( Point start , Point current )
+        private void LineSegmentBtn_Click ( object? sender , EventArgs e )
+        {
+            _toolMode = ToolMode.LineSegment;
+            _currentPoint = null;
+        }
+
+        private void ListDispBtn_Click ( object? sender , EventArgs e )
+        {
+            using var listForm = new ListViweForm ( _points );
+            listForm.ShowDialog ();
+        }
+
+        private PointF GetSnapPoint ( PointF start , PointF current )
         {
             if ( ( ModifierKeys & Keys.Shift ) == 0 )
                 return current;
 
-            int dx = current.X - start.X;
-            int dy = current.Y - start.Y;
+            float dx = current.X - start.X;
+            float dy = current.Y - start.Y;
 
             if ( Math.Abs ( dx ) >= Math.Abs ( dy ) )
-            {
-                // 水平
-                return new Point ( current.X , start.Y );
-            }
-            else
-            {
-                // 垂直
-                return new Point ( start.X , current.Y );
-            }
+                return new PointF ( current.X , start.Y );
+
+            return new PointF ( start.X , current.Y );
         }
-        private PointNode? FindPoint ( Point mouse )
+
+        private PointNode? FindPoint ( PointF mouse )
         {
             return _points.FirstOrDefault ( p =>
             {
-                int dx = p.Position.X - mouse.X;
-                int dy = p.Position.Y - mouse.Y;
+                float dx = p.Position.X - mouse.X;
+                float dy = p.Position.Y - mouse.Y;
 
-                return dx * dx + dy * dy <= PointRadius * PointRadius;
+                return dx * dx + dy * dy <= POINT_RADIUS * POINT_RADIUS;
             } );
+        }
+
+        private PointNode CreatePoint ( PointF position )
+        {
+            var point = new PointNode
+            {
+                Position = position,
+                Number = _points.Count + 1
+            };
+
+            point.PropertyChanged += Point_PropertyChanged;
+            _points.Add ( point );
+
+            return point;
+        }
+
+        private PointF WorldToScreen ( PointF world )
+        {
+            return new PointF (
+                ( world.X - _viewOffset.X ) * _scale ,
+                ( world.Y - _viewOffset.Y ) * _scale );
+        }
+
+        private PointF ScreenToWorld ( Point screen )
+        {
+            return new PointF (
+                screen.X / _scale + _viewOffset.X ,
+                screen.Y / _scale + _viewOffset.Y );
         }
     }
 }

@@ -1,6 +1,6 @@
 ﻿namespace LineCreator.Models
 {
-    class Line
+    class LineNode
     {
         public PointNode Start { get; set; }
         public PointNode End { get; set; }
