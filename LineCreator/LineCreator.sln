@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36915.13 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LineCreator", "LineCreator.csproj", "{D47A8262-CB4D-4969-8C00-3336F2CABA79}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D47A8262-CB4D-4969-8C00-3336F2CABA79}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D47A8262-CB4D-4969-8C00-3336F2CABA79}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D47A8262-CB4D-4969-8C00-3336F2CABA79}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D47A8262-CB4D-4969-8C00-3336F2CABA79}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {0104ADCB-C7DD-4EFA-B972-F7C56843418C}
+	EndGlobalSection
+EndGlobal
