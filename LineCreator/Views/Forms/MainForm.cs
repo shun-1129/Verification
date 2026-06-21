@@ -1,3 +1,5 @@
+using LineCreator.Commands.Impl;
+using LineCreator.Commands.Interface;
 using LineCreator.Models;
 using System.ComponentModel;
 using System.Drawing.Drawing2D;
@@ -7,11 +9,14 @@ namespace LineCreator.Views.Forms
 {
     public partial class MainForm : Form
     {
+        private readonly Stack<ICommand> _undoStack = new ();
+        private readonly Stack<ICommand> _redoStack = new ();
         private readonly Pen _linePen = new ( Color.Blue , 2 );
         private readonly Pen _tempPen = new ( Color.Gray , 1 ) { DashStyle = DashStyle.Dash };
-        private readonly BindingList<PointNode> _points = new();
-        private readonly BindingList<LineNode> _lines = new();
+        private readonly BindingList<PointNode> _points = new ();
+        private readonly BindingList<LineNode> _lines = new ();
         private PointNode? _currentPoint;
+        private PointNode? _selectedPoint;
         private Point _mousePosition;
         private ToolMode _toolMode = ToolMode.None;
         private PointF _viewOffset = new(0, 0);
@@ -56,25 +61,51 @@ namespace LineCreator.Views.Forms
             if ( e.KeyCode == Keys.Escape )
             {
                 _currentPoint = null;
+                _selectedPoint = null;
                 _toolMode = ToolMode.None;
 
                 _pointLinePanel.Invalidate ();
+                return;
+            }
+
+            if ( e.Control && e.KeyCode == Keys.Z )
+            {
+                Undo ();
+                return;
+            }
+            
+            if ( e.Control && e.KeyCode == Keys.Y )
+            {
+                Redo ();
+                return;
+            }
+
+            if ( e.KeyCode == Keys.Delete )
+            {
+                DeleteSelectedPoint ();
+                return;
             }
         }
 
         private void PointLinePanel_MouseClick ( object? sender , MouseEventArgs e )
         {
-            if ( _toolMode != ToolMode.LineSegment )
-                return;
-
-            if ( e.Button != MouseButtons.Left )
-                return;
-
-            // ★① 既存点をクリックしたか判定
-
             PointNode? point = null;
             PointF worldMouse = ScreenToWorld(e.Location);
             PointNode? hitPoint = FindPoint(worldMouse);
+            _selectedPoint = hitPoint;
+            _pointLinePanel.Invalidate ();
+
+            if ( _toolMode != ToolMode.LineSegment )
+            {
+                return;
+            }
+
+            if ( e.Button != MouseButtons.Left )
+            {
+                return;
+            }
+
+            // ★① 既存点をクリックしたか判定
             if ( hitPoint != null )
             {
                 DialogResult result = MessageBox.Show (
@@ -105,11 +136,13 @@ namespace LineCreator.Views.Forms
             // ★③ 線を引く処理
             if ( _currentPoint != null )
             {
-                _lines.Add ( new LineNode
+                LineNode line = new LineNode
                 {
                     Start = _currentPoint ,
                     End = point
-                } );
+                };
+
+                ExecuteCommand ( new AddLineCommand ( _lines , line ) );
             }
 
             _currentPoint = point;
@@ -120,7 +153,6 @@ namespace LineCreator.Views.Forms
         private void PointLinePanel_Paint ( object? sender , PaintEventArgs e )
         {
             Graphics g = e.Graphics;
-
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
             // 線
@@ -217,7 +249,9 @@ namespace LineCreator.Views.Forms
                 POINT_RADIUS * 2 ,
                 POINT_RADIUS * 2 );
 
-            Brush fill = Brushes.Red;
+            Brush fill = point == _selectedPoint ? Brushes.Yellow : Brushes.Red;
+            Brush textBrush = point == _selectedPoint ? Brushes.Black : Brushes.White;
+
             using Pen border = new Pen ( Color.Black , 2);
 
             g.FillEllipse ( fill , rect );
@@ -225,12 +259,12 @@ namespace LineCreator.Views.Forms
 
             string text = point.Number.ToString ();
 
-            SizeF size = g.MeasureString( text , Font );
+            SizeF size = g.MeasureString ( text , Font );
 
             g.DrawString (
                 text ,
                 Font ,
-                Brushes.White ,
+                textBrush ,
                 screen.X - size.Width / 2 ,
                 screen.Y - size.Height / 2 );
         }
@@ -244,7 +278,6 @@ namespace LineCreator.Views.Forms
         private void ListDispBtn_Click ( object? sender , EventArgs e )
         {
             using var listForm = new ListViweForm ( _points , _lines );
-            //using var listForm = new ListViweForm ( _points );
             listForm.ShowDialog ();
         }
 
@@ -275,15 +308,15 @@ namespace LineCreator.Views.Forms
 
         private PointNode CreatePoint ( PointF position )
         {
-            var point = new PointNode
+            PointNode point = new PointNode
             {
                 Position = position,
                 Number = _points.Count + 1
             };
 
             point.PropertyChanged += Point_PropertyChanged;
-            _points.Add ( point );
 
+            ExecuteCommand ( new AddPointCommand ( _points , point ) );
             return point;
         }
 
@@ -299,6 +332,62 @@ namespace LineCreator.Views.Forms
             return new PointF (
                 screen.X / _scale + _viewOffset.X ,
                 screen.Y / _scale + _viewOffset.Y );
+        }
+
+        private void ExecuteCommand ( ICommand command )
+        {
+            command.Execute ();
+
+            _undoStack.Push ( command );
+
+            _redoStack.Clear ();
+
+            _pointLinePanel.Invalidate ();
+        }
+
+        private void Undo ()
+        {
+            if ( _undoStack.Count == 0 )
+                return;
+
+            ICommand command = _undoStack.Pop();
+
+            command.Undo ();
+
+            _redoStack.Push ( command );
+
+            _pointLinePanel.Invalidate ();
+        }
+
+        private void Redo ()
+        {
+            if ( _redoStack.Count == 0 )
+                return;
+
+            ICommand command = _redoStack.Pop();
+
+            command.Execute ();
+
+            _undoStack.Push ( command );
+
+            _pointLinePanel.Invalidate ();
+        }
+
+        private void DeleteSelectedPoint ()
+        {
+            if ( _selectedPoint == null )
+                return;
+
+            ExecuteCommand (
+                new DeletePointCommand (
+                    _points ,
+                    _lines ,
+                    _selectedPoint ) );
+
+            if ( _currentPoint == _selectedPoint )
+                _currentPoint = null;
+
+            _selectedPoint = null;
         }
     }
 }

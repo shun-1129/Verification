@@ -2,7 +2,7 @@
 
 namespace LineCreator.Models
 {
-    public class PointNode
+    public class PointNode : INotifyPropertyChanged
     {
 
         public event PropertyChangedEventHandler? PropertyChanged;
