@@ -10,7 +10,7 @@ namespace LineCreator.Views.Forms
         private readonly Pen _linePen = new ( Color.Blue , 2 );
         private readonly Pen _tempPen = new ( Color.Gray , 1 ) { DashStyle = DashStyle.Dash };
         private readonly BindingList<PointNode> _points = new();
-        private readonly List<LineNode> _lines = new();
+        private readonly BindingList<LineNode> _lines = new();
         private PointNode? _currentPoint;
         private Point _mousePosition;
         private ToolMode _toolMode = ToolMode.None;
@@ -73,23 +73,19 @@ namespace LineCreator.Views.Forms
             // ★① 既存点をクリックしたか判定
 
             PointNode? point = null;
-
-            if ( _currentPoint != null )
+            PointF worldMouse = ScreenToWorld(e.Location);
+            PointNode? hitPoint = FindPoint(worldMouse);
+            if ( hitPoint != null )
             {
-                PointF worldMouse = ScreenToWorld(e.Location);
-                PointNode? hitPoint = FindPoint(worldMouse);
-                if ( hitPoint != null )
-                {
-                    var result = MessageBox.Show (
-                        "この点と接続しますか？" ,
-                        "確認" ,
-                        MessageBoxButtons.YesNo ,
-                        MessageBoxIcon.Question );
+                DialogResult result = MessageBox.Show (
+                    "この点と接続しますか？" ,
+                    "確認" ,
+                    MessageBoxButtons.YesNo ,
+                    MessageBoxIcon.Question );
 
-                    if ( result == DialogResult.Yes )
-                    {
-                        point = hitPoint;
-                    }
+                if ( result == DialogResult.Yes )
+                {
+                    point = hitPoint;
                 }
             }
 
@@ -247,7 +243,8 @@ namespace LineCreator.Views.Forms
 
         private void ListDispBtn_Click ( object? sender , EventArgs e )
         {
-            using var listForm = new ListViweForm ( _points );
+            using var listForm = new ListViweForm ( _points , _lines );
+            //using var listForm = new ListViweForm ( _points );
             listForm.ShowDialog ();
         }
 
